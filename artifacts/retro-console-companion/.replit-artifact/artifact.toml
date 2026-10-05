@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/"
+title = "Retro Console Companion"
+description = "An iPhone companion for organizing legally owned PS2 and PS3 game files, tracking emulator setup requirements, and understanding which games are suitable for local play or remote streaming."
+version = "1.0.0"
+id = "artifacts/retro-console-companion"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/" ]
+localPort = 22332
+
+[services.development]
+run = "pnpm --filter @workspace/retro-console-companion run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/retro-console-companion", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/retro-console-companion", "run", "serve" ]
+
+[services.env]
+PORT = "22332"
+BASE_PATH = "/"
