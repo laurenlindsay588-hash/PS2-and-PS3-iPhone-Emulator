@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "CNE7DnI-3R1bwdVW6HWTa"
+uri = "file://research/notes.md"
+type = "text"
+title = "Research Notes: Native iPhone PS2 Emulator"
+description = "The scope, source checklist, and running findings for whether a native PS2 emulator is feasible."
+logical_id = "672b5a91-002f-49a8-8075-0a927dd1305b"
+content_hash = "sha256:8334e08db08d7b8cbe97c88bc4db96f101af04c1b0b230d8b72f59ecec529652"
+size = 1789
+mtime_ms = 1791169802985
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:620eb045-7c7e-411a-8a7a-9a435d78ec6b/672b5a91-002f-49a8-8075-0a927dd1305b/ce858fd0-0eb1-4b4e-bde9-2cb02ffbd819"
+storage_version_token = "1791169805608349"
+content_type = "text/markdown"
