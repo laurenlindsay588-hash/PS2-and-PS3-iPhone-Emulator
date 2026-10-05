@@ -1,6 +1,8 @@
 import { Feather } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as Haptics from 'expo-haptics';
+import * as Sharing from 'expo-sharing';
 import React, { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -33,6 +35,7 @@ export default function LibraryScreen() {
   const [title, setTitle] = useState('');
   const [platform, setPlatform] = useState<GamePlatform>('ps2');
   const [fileName, setFileName] = useState('');
+  const [fileUri, setFileUri] = useState('');
   const [saving, setSaving] = useState(false);
 
   const visibleGames = games.filter((game) => {
@@ -44,6 +47,7 @@ export default function LibraryScreen() {
   const openAdd = () => {
     setTitle('');
     setFileName('');
+    setFileUri('');
     setPlatform('ps2');
     setModalVisible(true);
   };
@@ -58,6 +62,7 @@ export default function LibraryScreen() {
       if (result.canceled || !result.assets?.[0]) return;
       const file = result.assets[0];
       setFileName(file.name);
+      setFileUri(file.uri);
       if (!title.trim()) {
         setTitle(file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' '));
       }
@@ -76,6 +81,7 @@ export default function LibraryScreen() {
       return;
     }
     setSaving(true);
+    let copiedFileUri: string | undefined;
     const entry: GameEntry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       title: title.trim(),
@@ -84,10 +90,25 @@ export default function LibraryScreen() {
       addedAt: new Date().toISOString(),
     };
     try {
+      if (fileUri && Platform.OS !== 'web') {
+        const documentDirectory = FileSystem.documentDirectory;
+        if (!documentDirectory) throw new Error('App storage is unavailable');
+        const safeName = fileName.replace(/[^a-zA-Z0-9._-]+/g, '_') || 'game-file';
+        copiedFileUri = `${documentDirectory}${Date.now()}-${safeName}`;
+        await FileSystem.copyAsync({ from: fileUri, to: copiedFileUri });
+        entry.fileUri = copiedFileUri;
+      }
       await addGame(entry);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setModalVisible(false);
     } catch {
+      if (copiedFileUri) {
+        try {
+          await FileSystem.deleteAsync(copiedFileUri, { idempotent: true });
+        } catch {
+          // The save error is shown below; the selected source file is never modified.
+        }
+      }
       Alert.alert('Could not save', 'Your library could not be saved. Check your device storage and try again.');
     } finally {
       setSaving(false);
@@ -95,7 +116,7 @@ export default function LibraryScreen() {
   };
 
   const confirmRemove = (game: GameEntry) => {
-    Alert.alert('Remove from library?', `${game.title} will be removed from RetroShelf. The original file is not deleted.`, [
+    Alert.alert('Remove from library?', `${game.title} and its RetroShelf copy will be removed. The original file in Files is unchanged.`, [
       { text: 'Keep', style: 'cancel' },
       {
         text: 'Remove',
@@ -103,6 +124,13 @@ export default function LibraryScreen() {
         onPress: async () => {
           try {
             await removeGame(game.id);
+            if (game.fileUri && Platform.OS !== 'web') {
+              try {
+                await FileSystem.deleteAsync(game.fileUri, { idempotent: true });
+              } catch {
+                Alert.alert('Entry removed', 'The game was removed from your library, but its stored copy could not be deleted.');
+              }
+            }
             await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           } catch {
             Alert.alert('Could not remove game', 'Please try again.');
@@ -110,6 +138,27 @@ export default function LibraryScreen() {
         },
       },
     ]);
+  };
+
+  const shareGame = async (game: GameEntry) => {
+    if (!game.fileUri) {
+      Alert.alert('No file to share', 'Choose a game file when adding the game, then you can share it to a compatible app.');
+      return;
+    }
+    if (Platform.OS === 'web') {
+      Alert.alert('Open on iPhone', 'Local game files can only be shared from the iPhone app.');
+      return;
+    }
+    try {
+      const available = await Sharing.isAvailableAsync();
+      if (!available) {
+        Alert.alert('Sharing unavailable', 'This device cannot share local files right now.');
+        return;
+      }
+      await Sharing.shareAsync(game.fileUri, { dialogTitle: `Share ${game.title}` });
+    } catch {
+      Alert.alert('Could not share file', 'The saved copy may have been removed. Add the game file again and retry.');
+    }
   };
 
   return (
@@ -210,7 +259,7 @@ export default function LibraryScreen() {
             </View>
           )
         }
-        renderItem={({ item }) => <GameRow game={item} onRemove={() => confirmRemove(item)} styles={styles} />}
+        renderItem={({ item }) => <GameRow game={item} onRemove={() => confirmRemove(item)} onShare={() => shareGame(item)} styles={styles} />}
         scrollEnabled
       />
 
@@ -253,7 +302,7 @@ export default function LibraryScreen() {
               <Feather name="folder" size={18} color={colors.primary} />
               <View style={styles.filePickerText}>
                 <Text style={styles.filePickerTitle}>{fileName || 'Choose a game file'}</Text>
-                <Text style={styles.filePickerHint}>Optional · stored on your device, not uploaded</Text>
+                <Text style={styles.filePickerHint}>Optional · copied to this device, never uploaded</Text>
               </View>
               <Feather name="chevron-right" size={17} color={colors.mutedForeground} />
             </Pressable>
@@ -271,7 +320,7 @@ export default function LibraryScreen() {
   );
 }
 
-function GameRow({ game, onRemove, styles }: { game: GameEntry; onRemove: () => void; styles: ReturnType<typeof makeStyles> }) {
+function GameRow({ game, onRemove, onShare, styles }: { game: GameEntry; onRemove: () => void; onShare: () => void; styles: ReturnType<typeof makeStyles> }) {
   const colors = useColors();
   return (
     <View style={styles.gameRow}>
@@ -282,6 +331,9 @@ function GameRow({ game, onRemove, styles }: { game: GameEntry; onRemove: () => 
         <Text style={styles.gameTitle} numberOfLines={1}>{game.title}</Text>
         <Text style={styles.gameMeta} numberOfLines={1}>{game.platform.toUpperCase()} · {game.fileName}</Text>
       </View>
+      <Pressable onPress={onShare} hitSlop={8} style={styles.shareButton} accessibilityLabel={`Share ${game.title} file`} testID={`share-game-${game.id}`}>
+        <Feather name="share" size={17} color={game.fileUri ? colors.primary : colors.mutedForeground} />
+      </Pressable>
       <Pressable onPress={onRemove} hitSlop={10} style={styles.removeButton} accessibilityLabel={`Remove ${game.title}`}>
         <Feather name="more-horizontal" size={20} color={colors.mutedForeground} />
       </Pressable>
@@ -333,6 +385,7 @@ function makeStyles(c: ReturnType<typeof useColors>) {
     gameTitle: { color: c.foreground, fontSize: 14, fontFamily: 'Inter_600SemiBold' },
     gameMeta: { color: c.mutedForeground, fontSize: 10, fontFamily: 'Inter_400Regular', marginTop: 4 },
     removeButton: { padding: 8 },
+    shareButton: { padding: 8 },
     modalRoot: { flex: 1, justifyContent: 'flex-end' },
     modalScrim: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.56)' },
     modalCard: { backgroundColor: c.background, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingHorizontal: 22, paddingBottom: Platform.OS === 'web' ? 34 : 30, paddingTop: 10, borderWidth: 1, borderColor: c.border },

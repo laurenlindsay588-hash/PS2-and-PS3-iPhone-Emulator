@@ -8,6 +8,7 @@ export interface GameEntry {
   title: string;
   platform: GamePlatform;
   fileName: string;
+  fileUri?: string;
   addedAt: string;
 }
 
