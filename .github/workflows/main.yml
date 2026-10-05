@@ -1,0 +1,95 @@
+name: Build Alune Native PS2 iOS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  ios:
+    name: iOS arm64 unsigned IPA
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout ARMSX2
+        uses: actions/checkout@v7
+        with:
+          repository: ARMSX2/ARMSX2
+          path: armsx2
+          submodules: recursive
+
+      - name: Checkout Alune repository
+        uses: actions/checkout@v4
+        with:
+          path: alune
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -switch /Applications/Xcode.app
+          xcodebuild -version
+
+      - name: Install Rust iOS target
+        run: |
+          rustup target add aarch64-apple-ios
+
+      - name: Configure native iOS build
+        working-directory: armsx2/platforms/ios/app/src/main/cpp
+        run: |
+          cmake -G Xcode -B build \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DARMSX2_REAL_DEVICE=ON
+
+      - name: Build ARMSX2 for iPhone
+        working-directory: armsx2/platforms/ios/app/src/main/cpp
+        run: |
+          cmake --build build \
+            --config Release \
+            -- \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Find application
+        working-directory: armsx2/platforms/ios/app/src/main/cpp
+        run: |
+          APP_PATH=$(find build \
+            -name "ARMSX2iOS.app" \
+            -type d \
+            | head -1)
+
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: ARMSX2iOS.app was not produced."
+            find build -type d -name "*.app" -print
+            exit 1
+          fi
+
+          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+          echo "Found: $APP_PATH"
+
+      - name: Package unsigned IPA
+        working-directory: armsx2/platforms/ios/app/src/main/cpp
+        run: |
+          SHORT_SHA=$(git -C "$GITHUB_WORKSPACE/armsx2" rev-parse --short=8 HEAD)
+          IPA_NAME="Alune-ARMSX2-iOS-${SHORT_SHA}.ipa"
+
+          STAGING=$(mktemp -d)
+          mkdir -p "$STAGING/Payload"
+
+          cp -R "$APP_PATH" "$STAGING/Payload/"
+
+          cd "$STAGING"
+          zip -r "$GITHUB_WORKSPACE/$IPA_NAME" Payload \
+            -x "*.DS_Store"
+
+          cd "$GITHUB_WORKSPACE"
+
+          echo "Created:"
+          ls -lh "$IPA_NAME"
+
+          echo "IPA_NAME=$IPA_NAME" >> "$GITHUB_ENV"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Alune-ARMSX2-iOS
+          path: "*.ipa"
+          if-no-files-found: error
