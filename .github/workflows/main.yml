@@ -1,0 +1,89 @@
+name: Build Alune PS2 iOS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build ARMSX2 native iOS core
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout Alune repository
+        uses: actions/checkout@v4
+
+      - name: Checkout ARMSX2
+        uses: actions/checkout@v4
+        with:
+          repository: ARMSX2/ARMSX2
+          path: armsx2
+          fetch-depth: 1
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+          xcodebuild -version
+
+      - name: Inspect ARMSX2 iOS project
+        run: |
+          echo "ARMSX2 iOS files:"
+          find armsx2/platforms/ios -maxdepth 3 -type f | sort | head -300
+
+      - name: Find Xcode projects
+        run: |
+          echo "Xcode projects:"
+          find armsx2 -name "*.xcodeproj" -o -name "*.xcworkspace"
+
+      - name: Find iOS build instructions
+        run: |
+          echo "iOS README:"
+          if [ -f armsx2/platforms/ios/README.md ]; then
+            cat armsx2/platforms/ios/README.md
+          fi
+
+      - name: Build ARMSX2 iOS
+        working-directory: armsx2
+        shell: bash
+        run: |
+          set -e
+
+          echo "Checking repository build files..."
+
+          if [ -f platforms/ios/build.sh ]; then
+            chmod +x platforms/ios/build.sh
+            platforms/ios/build.sh
+          elif [ -f platforms/ios/build-ios.sh ]; then
+            chmod +x platforms/ios/build-ios.sh
+            platforms/ios/build-ios.sh
+          else
+            echo "No dedicated iOS build script found."
+            echo "Listing available build scripts:"
+            find . -maxdepth 4 \
+              \( -name "*.sh" -o -name "Makefile" -o -name "CMakeLists.txt" \) \
+              -print | sort | head -300
+          fi
+
+      - name: Search for generated IPA
+        run: |
+          echo "Searching for IPA:"
+          find armsx2 . \
+            -name "*.ipa" \
+            -type f \
+            -print
+
+      - name: Search for generated iOS application
+        run: |
+          echo "Searching for .app:"
+          find armsx2 . \
+            -name "*.app" \
+            -type d \
+            -print | head -100
+
+      - name: Upload build results
+        uses: actions/upload-artifact@v4
+        with:
+          name: Alune-ARMSX2-iOS-build
+          path: |
+            armsx2/**/*.ipa
+            armsx2/**/*.app
+          if-no-files-found: warn
