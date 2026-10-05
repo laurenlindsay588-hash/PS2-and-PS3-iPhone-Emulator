@@ -1,0 +1,112 @@
+name: Build Alune iOS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build native iOS emulator
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
+
+      - name: Show repository
+        run: |
+          echo "Repository contents:"
+          find . -maxdepth 3 -type f | sort | head -300
+
+      - name: Find Xcode project
+        run: |
+          find . \
+            \( -name "*.xcodeproj" -o -name "*.xcworkspace" \) \
+            -print
+
+      - name: Find iOS source
+        run: |
+          find . \
+            \( -name "Info.plist" -o -name "Package.swift" \) \
+            -print | head -100
+
+      - name: Prepare build directory
+        run: |
+          mkdir -p build
+
+      - name: Build native project
+        shell: bash
+        run: |
+          set -e
+
+          PROJECT=$(find . -maxdepth 4 -name "*.xcodeproj" -print -quit)
+
+          if [ -z "$PROJECT" ]; then
+            echo "No Xcode project found yet."
+            echo "The native Alune/ARMSX2 iOS project must be added before an IPA can be built."
+            exit 1
+          fi
+
+          SCHEME=$(xcodebuild -list -project "$PROJECT" \
+            | sed -n '/Schemes:/,/^$/p' \
+            | tail -n +2 \
+            | sed '/^[[:space:]]*$/d' \
+            | head -1 \
+            | xargs)
+
+          if [ -z "$SCHEME" ]; then
+            echo "No Xcode scheme found."
+            exit 1
+          fi
+
+          echo "Project: $PROJECT"
+          echo "Scheme: $SCHEME"
+
+          xcodebuild \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Locate application
+        run: |
+          find build/DerivedData \
+            -name "*.app" \
+            -type d \
+            -print
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -e
+
+          APP=$(find build/DerivedData \
+            -name "*.app" \
+            -type d \
+            -path "*Build/Products/Release-iphoneos/*" \
+            -print -quit)
+
+          if [ -z "$APP" ]; then
+            echo "No iOS .app was produced."
+            exit 1
+          fi
+
+          mkdir -p build/Payload
+          cp -R "$APP" build/Payload/
+
+          cd build
+          zip -r Alune-unsigned.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Alune-iOS
+          path: build/Alune-unsigned.ipa
