@@ -1,15 +1,14 @@
-name: Build Alune PS2 iOS
+name: Build Alune Native PS2
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Build ARMSX2 native iOS core
     runs-on: macos-15
 
     steps:
-      - name: Checkout Alune repository
+      - name: Checkout Alune
         uses: actions/checkout@v4
 
       - name: Checkout ARMSX2
@@ -24,66 +23,46 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
           xcodebuild -version
 
-      - name: Inspect ARMSX2 iOS project
+      - name: Make iOS build script executable
+        working-directory: armsx2
         run: |
-          echo "ARMSX2 iOS files:"
-          find armsx2/platforms/ios -maxdepth 3 -type f | sort | head -300
+          find platforms/ios -type f \
+            \( -name "build-ios-ipa.sh" -o -name "*ipa*.sh" \) \
+            -print
 
-      - name: Find Xcode projects
-        run: |
-          echo "Xcode projects:"
-          find armsx2 -name "*.xcodeproj" -o -name "*.xcworkspace"
-
-      - name: Find iOS build instructions
-        run: |
-          echo "iOS README:"
-          if [ -f armsx2/platforms/ios/README.md ]; then
-            cat armsx2/platforms/ios/README.md
-          fi
-
-      - name: Build ARMSX2 iOS
+      - name: Build native iOS IPA
         working-directory: armsx2
         shell: bash
         run: |
           set -e
 
-          echo "Checking repository build files..."
+          SCRIPT=$(find platforms/ios -type f \
+            -name "build-ios-ipa.sh" \
+            -print -quit)
 
-          if [ -f platforms/ios/build.sh ]; then
-            chmod +x platforms/ios/build.sh
-            platforms/ios/build.sh
-          elif [ -f platforms/ios/build-ios.sh ]; then
-            chmod +x platforms/ios/build-ios.sh
-            platforms/ios/build-ios.sh
-          else
-            echo "No dedicated iOS build script found."
-            echo "Listing available build scripts:"
-            find . -maxdepth 4 \
-              \( -name "*.sh" -o -name "Makefile" -o -name "CMakeLists.txt" \) \
-              -print | sort | head -300
+          if [ -z "$SCRIPT" ]; then
+            echo "ARMSX2 iOS IPA build script was not found."
+            echo "Listing iOS build files:"
+            find platforms/ios -maxdepth 5 -type f | sort
+            exit 1
           fi
 
-      - name: Search for generated IPA
-        run: |
-          echo "Searching for IPA:"
-          find armsx2 . \
-            -name "*.ipa" \
-            -type f \
-            -print
+          chmod +x "$SCRIPT"
 
-      - name: Search for generated iOS application
-        run: |
-          echo "Searching for .app:"
-          find armsx2 . \
-            -name "*.app" \
-            -type d \
-            -print | head -100
+          echo "Using:"
+          echo "$SCRIPT"
 
-      - name: Upload build results
+          "$SCRIPT" --fast
+
+      - name: Find IPA
+        working-directory: armsx2
+        run: |
+          echo "Generated IPA files:"
+          find . -type f -name "*.ipa" -print
+
+      - name: Upload native IPA
         uses: actions/upload-artifact@v4
         with:
-          name: Alune-ARMSX2-iOS-build
-          path: |
-            armsx2/**/*.ipa
-            armsx2/**/*.app
-          if-no-files-found: warn
+          name: Alune-native-iOS
+          path: armsx2/**/*.ipa
+          if-no-files-found: error
